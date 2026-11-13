@@ -1,0 +1,39 @@
+SELECT
+  p.first_name || ' ' || COALESCE(p.last_name, '') AS "Name",
+  gm.game_date AS "Date",
+  opponent.team_name AS "Opponent",
+  SUM(COALESCE(ge.shots, 0)::int)
+    - SUM(COALESCE(ge.saves, 0)::int) AS "GA",
+  SUM(COALESCE(ge.saves, 0)::int) AS "Sv",
+  SUM(COALESCE(ge.shots, 0)::int) AS "Sh",
+  CASE
+    WHEN SUM(COALESCE(ge.shots, 0)::int) > 0
+      THEN ROUND(
+        SUM(COALESCE(ge.saves, 0)::int)::numeric
+        / SUM(COALESCE(ge.shots, 0)::int),
+        3
+      )
+    ELSE NULL
+  END AS "SvPct"
+FROM public.game_event ge
+JOIN public.players p
+  ON p.player_id = ge.goalie_id
+LEFT JOIN public.game gm
+  ON gm.game_id = ge.game_id
+LEFT JOIN public.teams opponent
+  ON opponent.team_id = CASE
+    WHEN gm.home_team_id = 1 THEN gm.away_team_id
+    WHEN gm.away_team_id = 1 THEN gm.home_team_id
+    ELSE NULL
+  END
+WHERE ge.team_id = 1
+GROUP BY
+  ge.goalie_id,
+  p.first_name,
+  p.last_name,
+  ge.game_id,
+  gm.game_date,
+  opponent.team_name
+HAVING SUM(COALESCE(ge.shots, 0)::int) > 0
+   AND SUM(COALESCE(ge.saves, 0)::int) > 0
+ORDER BY gm.game_date, ge.game_id, ge.goalie_id;

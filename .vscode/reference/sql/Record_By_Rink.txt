@@ -1,0 +1,30 @@
+SELECT
+  COALESCE(r.rink_name, 'Unknown') AS rink_name,
+  COUNT(*) FILTER (
+    WHERE (g.home_team_id = 1 OR g.away_team_id = 1)
+      AND g.game_status = 'completed'
+  ) AS games,
+  SUM(
+    CASE
+      WHEN (g.home_team_id = 1 AND g.home_score > g.away_score)
+        OR (g.away_team_id = 1 AND g.away_score > g.home_score)
+      THEN 1 ELSE 0 END
+  ) AS wins,
+  SUM(
+    CASE
+      WHEN (g.home_team_id = 1 AND g.home_score < g.away_score)
+        OR (g.away_team_id = 1 AND g.away_score < g.home_score)
+      THEN 1 ELSE 0 END
+  ) AS losses,
+  SUM(
+    CASE
+      WHEN (g.home_team_id = 1 OR g.away_team_id = 1)
+        AND g.home_score = g.away_score
+      THEN 1 ELSE 0 END
+  ) AS ties
+FROM public.game g
+LEFT JOIN public.rink r ON r.rink_id = g.rink_id
+WHERE (g.home_team_id = 1 OR g.away_team_id = 1)
+  AND g.game_status = 'completed'
+GROUP BY r.rink_name
+ORDER BY r.rink_name;

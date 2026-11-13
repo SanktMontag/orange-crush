@@ -1,0 +1,101 @@
+WITH players_of_team AS (
+  SELECT DISTINCT
+    p.player_id,
+    p.first_name,
+    p.last_name
+  FROM public.players p
+  JOIN public.roster r
+    ON p.player_id = r.player_id
+   AND r.team_id = 1
+),
+
+skater_appearances AS (
+  -- Only games where this player appears as 'S'
+  SELECT
+    gr.player_id,
+    gr.game_id
+  FROM public.game_roster gr
+  WHERE gr.team_id = 1
+    AND gr.position = 'S'
+),
+
+goals AS (
+  SELECT
+    se.goal_scorer_id AS player_id,
+    COUNT(*) AS goals
+  FROM public.scoring_event se
+  JOIN skater_appearances sa
+    ON sa.game_id = se.game_id
+   AND sa.player_id = se.goal_scorer_id
+  WHERE se.team_id = 1
+    AND se.goal_scorer_id IS NOT NULL
+  GROUP BY se.goal_scorer_id
+),
+
+assists AS (
+  SELECT
+    aid.player_id,
+    COUNT(*) AS assists
+  FROM (
+    SELECT se.assist_1_id AS player_id, se.game_id
+    FROM public.scoring_event se
+    WHERE se.team_id = 1
+      AND se.assist_1_id IS NOT NULL
+
+    UNION ALL
+
+    SELECT se.assist_2_id AS player_id, se.game_id
+    FROM public.scoring_event se
+    WHERE se.team_id = 1
+      AND se.assist_2_id IS NOT NULL
+  ) aid
+  JOIN skater_appearances sa
+    ON sa.game_id = aid.game_id
+   AND sa.player_id = aid.player_id
+  GROUP BY aid.player_id
+),
+
+penalties AS (
+  SELECT
+    pe.player_id,
+    COALESCE(ROUND(EXTRACT(EPOCH FROM SUM(pe.duration)) / 60)::int, 0) AS penalty_minutes
+  FROM public.penalty_event pe
+  JOIN skater_appearances sa
+    ON sa.game_id = pe.game_id
+   AND sa.player_id = pe.player_id
+  WHERE pe.team_id = 1
+  GROUP BY pe.player_id
+),
+
+appearance_games AS (
+  SELECT
+    sa.player_id,
+    COUNT(DISTINCT sa.game_id) AS games_played
+  FROM skater_appearances sa
+  GROUP BY sa.player_id
+)
+
+SELECT
+  pot.first_name || ' ' || pot.last_name AS player_name,
+  COALESCE(ag.games_played, 0) AS gp,
+  COALESCE(g.goals, 0) AS g,
+  COALESCE(a.assists, 0) AS a,
+  (COALESCE(g.goals, 0) + COALESCE(a.assists, 0)) AS pts,
+  CASE
+    WHEN COALESCE(ag.games_played, 0) = 0 THEN NULL
+    ELSE ROUND(
+      (COALESCE(g.goals, 0) + COALESCE(a.assists, 0))::numeric
+      / COALESCE(ag.games_played, 0), 2
+    )
+  END AS pts_per_gp,
+  COALESCE(pe.penalty_minutes, 0) AS pim
+FROM players_of_team pot
+LEFT JOIN goals g
+  ON pot.player_id = g.player_id
+LEFT JOIN assists a
+  ON pot.player_id = a.player_id
+LEFT JOIN penalties pe
+  ON pot.player_id = pe.player_id
+LEFT JOIN appearance_games ag
+  ON pot.player_id = ag.player_id
+ORDER BY pts DESC, g DESC, a DESC, pot.last_name;

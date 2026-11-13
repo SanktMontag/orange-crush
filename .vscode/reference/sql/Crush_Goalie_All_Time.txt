@@ -1,0 +1,42 @@
+WITH goalie_game AS (
+  SELECT
+    game_id,
+    goalie_id,
+    team_id,
+    SUM(COALESCE(shots, 0)::int) AS shots,
+    SUM(COALESCE(saves, 0)::int) AS saves
+  FROM public.game_event
+  WHERE team_id = 1
+  GROUP BY game_id, goalie_id, team_id
+)
+SELECT
+  TRIM(p.first_name || ' ' || COALESCE(p.last_name, '')) AS goalie_name,
+  COUNT(*) AS "GP",
+  COUNT(*) FILTER (
+    WHERE (gm.home_team_id = gg.team_id AND gm.home_score > gm.away_score)
+       OR (gm.away_team_id = gg.team_id AND gm.away_score > gm.home_score)
+  ) AS "W",
+  COUNT(*) FILTER (
+    WHERE (gm.home_team_id = gg.team_id AND gm.home_score < gm.away_score)
+       OR (gm.away_team_id = gg.team_id AND gm.away_score < gm.home_score)
+  ) AS "L",
+  COUNT(*) FILTER (
+    WHERE gm.home_score = gm.away_score
+  ) AS "T",
+  SUM(gg.shots - gg.saves) AS "GA",
+  SUM(gg.shots) AS "Sh",
+  SUM(gg.saves) AS "Sv",
+  CASE
+    WHEN SUM(gg.shots) > 0
+      THEN ROUND(SUM(gg.saves)::numeric / SUM(gg.shots), 3)
+    ELSE NULL
+  END AS "SvPct"
+FROM goalie_game gg
+JOIN public.players p
+  ON p.player_id = gg.goalie_id
+JOIN public.game gm
+  ON gm.game_id = gg.game_id
+GROUP BY p.player_id, p.first_name, p.last_name
+HAVING SUM(gg.shots) > 0
+   AND SUM(gg.saves) > 0
+ORDER BY "SvPct" DESC NULLS LAST, "Sh" DESC;

@@ -1,0 +1,19 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets: database credentials live in Streamlit secrets, never in git
+.streamlit/secrets.toml
+.env
+*.env
+
+# Local editor and AI-tool settings (contain the Supabase project id)
+.mcp.json
+.vscode/mcp.json
+.claude/settings.local.json
+
+# OS clutter
+.DS_Store
+Thumbs.db
+desktop.ini

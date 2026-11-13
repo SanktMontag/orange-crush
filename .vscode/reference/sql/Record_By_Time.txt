@@ -1,0 +1,50 @@
+SELECT
+  time_bucket,
+  COUNT(*) AS games,
+  SUM(
+    CASE
+      WHEN ((home_team_id = 1 AND home_score > away_score)
+         OR (away_team_id = 1 AND away_score > home_score))
+      THEN 1 ELSE 0 END
+  ) AS wins,
+  SUM(
+    CASE
+      WHEN ((home_team_id = 1 AND home_score < away_score)
+         OR (away_team_id = 1 AND away_score < home_score))
+      THEN 1 ELSE 0 END
+  ) AS losses,
+  SUM(
+    CASE
+      WHEN ((home_team_id = 1 OR away_team_id = 1) AND home_score = away_score)
+      THEN 1 ELSE 0 END
+  ) AS ties
+FROM (
+  SELECT
+    *,
+    CASE
+      WHEN EXTRACT(HOUR FROM game_time) < 18 THEN 'before_6pm'
+      WHEN EXTRACT(HOUR FROM game_time) >= 18
+           AND EXTRACT(HOUR FROM game_time) < 19 THEN '6_to_7pm'
+      WHEN EXTRACT(HOUR FROM game_time) >= 19
+           AND EXTRACT(HOUR FROM game_time) < 20 THEN '7_to_8pm'
+      WHEN EXTRACT(HOUR FROM game_time) >= 20
+           AND EXTRACT(HOUR FROM game_time) < 21 THEN '8_to_9pm'
+      WHEN EXTRACT(HOUR FROM game_time) >= 21
+           AND EXTRACT(HOUR FROM game_time) < 22 THEN '9_to_10pm'
+      ELSE 'after_10pm'
+    END AS time_bucket
+  FROM public.game
+  WHERE (home_team_id = 1 OR away_team_id = 1)
+    AND game_status = 'completed'
+) g
+GROUP BY time_bucket
+ORDER BY
+  CASE time_bucket
+    WHEN 'before_6pm' THEN 1
+    WHEN '6_to_7pm' THEN 2
+    WHEN '7_to_8pm' THEN 3
+    WHEN '8_to_9pm' THEN 4
+    WHEN '9_to_10pm' THEN 5
+    WHEN 'after_10pm' THEN 6
+    ELSE 7
+  END;

@@ -1,0 +1,9 @@
+[theme]
+baseRadius = "medium"
+chartCategoricalColors = ["#F47920", "#5B6770", "#2E9E5B", "#D64545", "#3B82F6", "#A855F7"]
+
+[theme.light]
+primaryColor = "#E8650F"
+
+[theme.dark]
+primaryColor = "#F7893A"

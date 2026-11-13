@@ -1,0 +1,159 @@
+with
+  params as (
+    select
+      1::bigint as team_id
+  ),
+  player_roster as (
+    select distinct
+      r.player_id,
+      r.season_id
+    from
+      public.roster r
+      cross join params prm
+    where
+      r.team_id = prm.team_id
+  ),
+  skater_appearances as (
+    select
+      gr.player_id,
+      gr.game_id,
+      g.season_id
+    from
+      public.game_roster gr
+      join public.game g on g.game_id = gr.game_id
+      cross join params prm
+    where
+      gr.team_id = prm.team_id
+      and gr.position = 'S'
+  ),
+  team_scoring_events as (
+    select
+      se.*
+    from
+      public.scoring_event se
+      cross join params prm
+    where
+      se.team_id = prm.team_id
+  ),
+  goals as (
+    select
+      se.goal_scorer_id as player_id,
+      g.season_id,
+      COUNT(*) as goals
+    from
+      team_scoring_events se
+      join public.game g on g.game_id = se.game_id
+      join skater_appearances sa on sa.game_id = se.game_id
+      and sa.player_id = se.goal_scorer_id
+      and sa.season_id = g.season_id
+    where
+      se.goal_scorer_id is not null
+    group by
+      se.goal_scorer_id,
+      g.season_id
+  ),
+  assists as (
+    select
+      aid.player_id,
+      g.season_id,
+      COUNT(*) as assists
+    from
+      (
+        select
+          se.assist_1_id as player_id,
+          se.game_id
+        from
+          team_scoring_events se
+        where
+          se.assist_1_id is not null
+        union all
+        select
+          se.assist_2_id as player_id,
+          se.game_id
+        from
+          team_scoring_events se
+        where
+          se.assist_2_id is not null
+      ) aid
+      join public.game g on g.game_id = aid.game_id
+      join skater_appearances sa on sa.game_id = aid.game_id
+      and sa.player_id = aid.player_id
+      and sa.season_id = g.season_id
+    group by
+      aid.player_id,
+      g.season_id
+  ),
+  penalties as (
+    select
+      pe.player_id,
+      g.season_id,
+      COALESCE(
+        ROUND(
+          EXTRACT(
+            EPOCH
+            from
+              SUM(pe.duration)
+          ) / 60
+        )::int,
+        0
+      ) as penalty_minutes
+    from
+      public.penalty_event pe
+      join public.game g on g.game_id = pe.game_id
+      join skater_appearances sa on sa.game_id = pe.game_id
+      and sa.player_id = pe.player_id
+      and sa.season_id = g.season_id
+      cross join params prm
+    where
+      pe.team_id = prm.team_id
+    group by
+      pe.player_id,
+      g.season_id
+  ),
+  appearance_games as (
+    select
+      sa.player_id,
+      sa.season_id,
+      COUNT(distinct sa.game_id) as games_played
+    from
+      skater_appearances sa
+    group by
+      sa.player_id,
+      sa.season_id
+  )
+select
+  s.season_name,
+  pl.first_name || ' ' || pl.last_name as player_name,
+  COALESCE(ag.games_played, 0) as gp,
+  COALESCE(g.goals, 0) as g,
+  COALESCE(a.assists, 0) as a,
+  COALESCE(g.goals, 0) + COALESCE(a.assists, 0) as pts,
+  case
+    when COALESCE(ag.games_played, 0) = 0 then null
+    else ROUND(
+      (COALESCE(g.goals, 0) + COALESCE(a.assists, 0))::numeric / ag.games_played,
+      2
+    )
+  end as pts_per_gp,
+  COALESCE(pe.penalty_minutes, 0) as pim
+from
+  player_roster p
+  join public.players pl on pl.player_id = p.player_id
+  join public.season s on s.season_id = p.season_id
+  left join goals g on g.player_id = p.player_id
+  and g.season_id = p.season_id
+  left join assists a on a.player_id = p.player_id
+  and a.season_id = p.season_id
+  left join penalties pe on pe.player_id = p.player_id
+  and pe.season_id = p.season_id
+  left join appearance_games ag on ag.player_id = p.player_id
+  and ag.season_id = p.season_id
+order by
+  case s.season_name
+    when 'Fall Winter 24/25' then 1
+    when 'Summer 25' then 2
+    when 'Fall Winter 25/26' then 3
+    when 'Summer 26' then 4
+    when 'Fall Winter 26/27' then 5
+    else 6
+  end;

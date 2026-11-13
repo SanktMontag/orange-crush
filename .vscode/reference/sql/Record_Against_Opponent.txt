@@ -1,0 +1,62 @@
+WITH base AS (
+  SELECT
+    CASE
+      WHEN home_team_id = 1 THEN away_team_id
+      ELSE home_team_id
+    END AS opponent_team_id,
+
+    CASE WHEN home_team_id = 1 THEN home_score ELSE away_score END AS goals_for,
+    CASE WHEN home_team_id = 1 THEN away_score ELSE home_score END AS goals_against,
+
+    CASE
+      WHEN (CASE WHEN home_team_id = 1 THEN home_score ELSE away_score END) >
+           (CASE WHEN home_team_id = 1 THEN away_score ELSE home_score END) THEN 'win'
+      WHEN (CASE WHEN home_team_id = 1 THEN home_score ELSE away_score END) =
+           (CASE WHEN home_team_id = 1 THEN away_score ELSE home_score END) THEN 'draw'
+      ELSE 'loss'
+    END AS result
+  FROM public.game
+  WHERE (home_team_id = 1 OR away_team_id = 1)
+    AND game_status = 'completed'
+), agg AS (
+  SELECT
+    opponent_team_id,
+    COUNT(*) AS games,
+    SUM(CASE WHEN result = 'win' THEN 1 ELSE 0 END) AS wins,
+    SUM(CASE WHEN result = 'loss' THEN 1 ELSE 0 END) AS losses,
+    SUM(CASE WHEN result = 'draw' THEN 1 ELSE 0 END) AS draws,
+    SUM(goals_for) AS goals_for,
+    SUM(goals_against) AS goals_against,
+
+    ROUND(
+      CASE WHEN COUNT(*) = 0 THEN 0
+           ELSE SUM(CASE WHEN result = 'win' THEN 1 ELSE 0 END)::numeric / COUNT(*)
+      END
+    , 3) AS win_pct,
+
+    ROUND(
+      CASE WHEN COUNT(*) = 0 THEN 0
+           ELSE (
+             2 * SUM(CASE WHEN result = 'win' THEN 1 ELSE 0 END)
+             + 1 * SUM(CASE WHEN result = 'draw' THEN 1 ELSE 0 END)
+           )::numeric
+           / (2 * COUNT(*))
+      END
+    , 3) AS points_pct
+  FROM base
+  GROUP BY opponent_team_id
+)
+SELECT
+  agg.opponent_team_id,
+  t.team_name AS opponent_name,
+  agg.games,
+  agg.wins,
+  agg.losses,
+  agg.draws,
+  agg.goals_for,
+  agg.goals_against,
+  agg.win_pct,
+  agg.points_pct
+FROM agg
+LEFT JOIN public.teams t ON t.team_id = agg.opponent_team_id
+ORDER BY agg.games DESC, agg.win_pct ASC;
